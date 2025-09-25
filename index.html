@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bản đồ thông minh</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+  <style>
+    #map { height: 100vh; }
+    .search-box {
+      position: absolute;
+      top: 10px; left: 60px;
+      background: white; padding: 10px;
+      z-index: 1000;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      border-radius: 5px;
+    }
+    .search-box input {
+      width: 180px; margin: 2px 0; padding: 5px;
+    }
+    .search-box button {
+      margin-top: 5px; width: 100%;
+      padding: 5px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="search-box">
+    <input type="text" id="from" placeholder="Điểm đi">
+    <input type="text" id="to" placeholder="Điểm đến">
+    <button id="findRoute">Tìm đường</button>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+
+  <script>
+    // API key OpenWeatherMap của bạn
+    const WEATHER_KEY = "81a77eb1588623119bb56b1cf6844c38";
+
+    // Tạo bản đồ
+    const map = L.map('map').setView([10.762622, 106.660172], 13);
+
+    // Tile layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+    }).addTo(map);
+
+    // Ô tìm kiếm địa chỉ
+    L.Control.geocoder().addTo(map);
+
+    // Routing control
+    let routingControl;
+
+    // Hàm geocode địa chỉ -> tọa độ
+    function geocodeAddress(address) {
+      return fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.length > 0) {
+            return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+          } else {
+            alert("Không tìm thấy địa chỉ: " + address);
+            return null;
+          }
+        });
+    }
+
+    // Xử lý nút Tìm đường
+    document.getElementById("findRoute").addEventListener("click", async () => {
+      const fromAddr = document.getElementById("from").value;
+      const toAddr = document.getElementById("to").value;
+
+      if (!fromAddr || !toAddr) {
+        alert("Vui lòng nhập cả điểm đi và điểm đến!");
+        return;
+      }
+
+      const fromCoords = await geocodeAddress(fromAddr);
+      const toCoords = await geocodeAddress(toAddr);
+
+      if (fromCoords && toCoords) {
+        if (routingControl) map.removeControl(routingControl);
+
+        routingControl = L.Routing.control({
+          waypoints: [L.latLng(fromCoords[0], fromCoords[1]), L.latLng(toCoords[0], toCoords[1])],
+          routeWhileDragging: true,
+          geocoder: L.Control.Geocoder.nominatim()
+        }).addTo(map);
+      }
+    });
+
+    // Khi click vào map -> hiện dự báo thời tiết sau 3 giờ
+    map.on("click", async (e) => {
+      const lat = e.latlng.lat;
+      const lon = e.latlng.lng;
+
+      try {
+        const res = await fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&units=metric&appid=${WEATHER_KEY}&lang=vi`);
+        const data = await res.json();
+
+        if (data.list && data.list.length > 1) {
+          const forecast = data.list[1]; // Sau 3 giờ
+          const temp = forecast.main.temp;
+          const weather = forecast.weather[0].description;
+          const icon = forecast.weather[0].icon;
+
+          L.popup()
+            .setLatLng(e.latlng)
+            .setContent(`
+              <b>Dự báo sau 3 giờ:</b><br>
+              Nhiệt độ: ${temp} °C<br>
+              Thời tiết: ${weather}<br>
+              <img src="https://openweathermap.org/img/wn/${icon}.png" />
+            `)
+            .openOn(map);
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Lỗi khi lấy dữ liệu thời tiết!");
+      }
+    });
+  </script>
+</body>
+</html>
